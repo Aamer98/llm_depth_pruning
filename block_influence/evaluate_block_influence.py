@@ -85,6 +85,8 @@ def compute_log_probs(logits: torch.Tensor, target_ids: torch.Tensor) -> Tuple[n
     return sequence_perplexity, sequence_log_prob
 
 
+
+# returns the perplexity and loss -> what's it used for in the context of block influence?
 @torch.no_grad()
 def evaluate_model(model: torch.nn.Module, eval_loader: torch.utils.data.DataLoader, device: torch.device, split_name: str):
     model.eval()
@@ -92,6 +94,7 @@ def evaluate_model(model: torch.nn.Module, eval_loader: torch.utils.data.DataLoa
     avg_loss = 0.
     num_ex = 0
 
+    # initially run on the train set
     for batch in tqdm(eval_loader):
         tokenized_input = batch["input_ids"].to(device)
 
@@ -109,6 +112,10 @@ def evaluate_model(model: torch.nn.Module, eval_loader: torch.utils.data.DataLoa
         avg_sequence_perplexity += float(perplexity.sum())
         avg_loss += float(outputs.loss)
         num_ex += len(tokenized_input)
+
+        # Unit test
+        if num_ex>5:
+            break
 
     # Collect the stats from all processes
     avg_sequence_perplexity = float(reduce_tensor(torch.tensor(avg_sequence_perplexity).to(device)))
@@ -139,6 +146,9 @@ def compute_block_shapley(model: torch.nn.Module, eval_loader: torch.utils.data.
     for iterator, batch in enumerate(tqdm(eval_loader)):
         tokenized_input = batch["input_ids"].to(device)
         base_logits = None
+
+        # Unit Test
+        k = 0
         for i in range(1+num_subsampled_networks):  # first one is always base model eval
             selected_blocks = None  # use full network
             if i != 0:  # use subnetwork
@@ -159,7 +169,10 @@ def compute_block_shapley(model: torch.nn.Module, eval_loader: torch.utils.data.
                 assert selected_blocks is not None
                 diff_norm = torch.norm(base_logits - lm_logits, p=2, dim=-1).mean()  # mean over batch and sequence
                 all_statistics.append((selected_blocks, float(diff_norm), float(lm_loss)))
+        k+=1
 
+        if k > 5:
+            break
         # Check if stopping condition is met
         if max_samples_per_proc is not None and iterator >= max_samples_per_proc - 1:
             print(f"{iterator} samples collected for logit shapley value. Stopping further computations!")
@@ -253,27 +266,30 @@ def main(args):
     block_influence_estimator = BlockInfluenceEstimator(num_model_layers, device)
     model.add_block_influence_estimator(block_influence_estimator)
     evaluate_model(model, train_loader, device, split_name=None)  # use the train set to compute block influences
+    breakpoint()
     final_block_influences = block_influence_estimator.get_block_influences()
     model.add_block_influence_estimator(None)  # remove the block influence computation
     print("Final block influences:", final_block_influences)
 
-    cosine_block_influences = [x["cosine_dist"] for x in final_block_influences]
-    l1_block_influences = [x["l1_update_norm"] for x in final_block_influences]
-    relative_l1_block_influences = [x["l1_relative_update_norm"] for x in final_block_influences]
-    l2_block_influences = [x["l2_update_norm"] for x in final_block_influences]
-    relative_l2_block_influences = [x["l2_relative_update_norm"] for x in final_block_influences]
-    print("Cosine block influences:", cosine_block_influences)
-    print("L1 block influences:", l1_block_influences)
-    print("Relative L1 block influences:", relative_l1_block_influences)
-    print("L2 block influences:", l2_block_influences)
-    print("Relative L2 block influences:", relative_l2_block_influences)
+    # cosine_block_influences = [x["cosine_dist"] for x in final_block_influences]
+    # l1_block_influences = [x["l1_update_norm"] for x in final_block_influences]
+    # relative_l1_block_influences = [x["l1_relative_update_norm"] for x in final_block_influences]
+    # l2_block_influences = [x["l2_update_norm"] for x in final_block_influences]
+    # relative_l2_block_influences = [x["l2_relative_update_norm"] for x in final_block_influences]
+    # print("Cosine block influences:", cosine_block_influences)
+    # print("L1 block influences:", l1_block_influences)
+    # print("Relative L1 block influences:", relative_l1_block_influences)
+    # print("L2 block influences:", l2_block_influences)
+    # print("Relative L2 block influences:", relative_l2_block_influences)
+
+    cosine_block_influences  = [x for x in final_block_influences]
 
     if wandb.run is not None:
         wandb.log({f"block_{i}_cosine_influence": block_influence for i, block_influence in enumerate(cosine_block_influences)})
-        wandb.log({f"block_{i}_l1_influence": block_influence for i, block_influence in enumerate(l1_block_influences)})
-        wandb.log({f"block_{i}_relative_l1_influence": block_influence for i, block_influence in enumerate(relative_l1_block_influences)})
-        wandb.log({f"block_{i}_l2_influence": block_influence for i, block_influence in enumerate(l2_block_influences)})
-        wandb.log({f"block_{i}_relative_l2_influence": block_influence for i, block_influence in enumerate(relative_l2_block_influences)})
+        # wandb.log({f"block_{i}_l1_influence": block_influence for i, block_influence in enumerate(l1_block_influences)})
+        # wandb.log({f"block_{i}_relative_l1_influence": block_influence for i, block_influence in enumerate(relative_l1_block_influences)})
+        # wandb.log({f"block_{i}_l2_influence": block_influence for i, block_influence in enumerate(l2_block_influences)})
+        # wandb.log({f"block_{i}_relative_l2_influence": block_influence for i, block_influence in enumerate(relative_l2_block_influences)})
 
     # Compute the block logit shapley
     max_samples_per_proc = None
@@ -289,9 +305,9 @@ def main(args):
         wandb.log({f"block_{i}_logit_shapley_influence": block_influence for i, block_influence in enumerate(logit_shapley_block_influence)})
         wandb.log({f"block_{i}_loss_shapley_influence": block_influence for i, block_influence in enumerate(loss_shapley_block_influence)})
 
-    block_influence_list = [("cosine", cosine_block_influences), ("relative_l1", relative_l1_block_influences),
-                            ("relative_l2", relative_l2_block_influences), ("logit_shapley", logit_shapley_block_influence),
-                            ("loss_shapley", loss_shapley_block_influence)]
+    block_influence_list = [("cosine", cosine_block_influences)]#, ("relative_l1", relative_l1_block_influences),
+                            # ("relative_l2", relative_l2_block_influences), ("logit_shapley", logit_shapley_block_influence),
+                            # ("loss_shapley", loss_shapley_block_influence)]
     for influence_name, block_influences in block_influence_list:
         print("Using block influence method:", influence_name)
         print("Block influence values:", block_influences)

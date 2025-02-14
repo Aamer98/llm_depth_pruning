@@ -1,0 +1,1 @@
+python layer_influence/evaluate_layer_influence.py --dataset "openwebtext" --model-name "llama-2" --model-size 7b --batch-size 1 --sequence-length 2048 --subsample-size 250000 --pruning-scheme "mhsa" --limit-shapley-samples 25000 --wandb-project 'layer_influence'

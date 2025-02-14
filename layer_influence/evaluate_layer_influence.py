@@ -16,7 +16,7 @@ import numpy as np
 from transformers import AutoTokenizer, AutoConfig
 
 from llama_layer_influence import LlamaForCausalLM
-from mistral_layer_influence import MistralForCausalLM
+# from mistral_layer_influence import MistralForCausalLM
 
 import sys
 sys.path.append('.')
