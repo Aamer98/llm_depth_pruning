@@ -113,9 +113,9 @@ def evaluate_model(model: torch.nn.Module, eval_loader: torch.utils.data.DataLoa
         avg_loss += float(outputs.loss)
         num_ex += len(tokenized_input)
 
-        # Unit test
-        if num_ex>5:
-            break
+        # # Unit test
+        # if num_ex>5:
+        #     break
 
     # Collect the stats from all processes
     avg_sequence_perplexity = float(reduce_tensor(torch.tensor(avg_sequence_perplexity).to(device)))
@@ -148,7 +148,7 @@ def compute_block_shapley(model: torch.nn.Module, eval_loader: torch.utils.data.
         base_logits = None
 
         # Unit Test
-        k = 0
+        # k = 0
         for i in range(1+num_subsampled_networks):  # first one is always base model eval
             selected_blocks = None  # use full network
             if i != 0:  # use subnetwork
@@ -169,10 +169,10 @@ def compute_block_shapley(model: torch.nn.Module, eval_loader: torch.utils.data.
                 assert selected_blocks is not None
                 diff_norm = torch.norm(base_logits - lm_logits, p=2, dim=-1).mean()  # mean over batch and sequence
                 all_statistics.append((selected_blocks, float(diff_norm), float(lm_loss)))
-        k+=1
+        # k+=1
 
-        if k > 5:
-            break
+        # if k > 5:
+        #     break
         # Check if stopping condition is met
         if max_samples_per_proc is not None and iterator >= max_samples_per_proc - 1:
             print(f"{iterator} samples collected for logit shapley value. Stopping further computations!")
@@ -232,7 +232,7 @@ def main(args):
     if is_main_proc() and not NLPDataset.is_dataset_processed(args.dataset_output_dir):
         tokenizer = load_model(args, only_tokenizer=True)
         dataset = NLPDataset(args.dataset, tokenizer, max_length=args.sequence_length,
-                             combine_documents=True, subsample_size=args.subsample_size)
+                             combine_documents=True, subsample_size=args.subsample_size, num_proc=16)
         dataset.save_datasets(args.dataset_output_dir)
     wait_for_other_procs()  # wait for the main process to write the dataset
 
@@ -266,7 +266,7 @@ def main(args):
     block_influence_estimator = BlockInfluenceEstimator(num_model_layers, device)
     model.add_block_influence_estimator(block_influence_estimator)
     evaluate_model(model, train_loader, device, split_name=None)  # use the train set to compute block influences
-    breakpoint()
+    # breakpoint()
     final_block_influences = block_influence_estimator.get_block_influences()
     model.add_block_influence_estimator(None)  # remove the block influence computation
     print("Final block influences:", final_block_influences)
